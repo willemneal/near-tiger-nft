@@ -45,12 +45,11 @@ pub struct Contract {
     is_premint_over: bool,
     premint_deadline_at: u64,
 }
-const DEFAULT_SUPPLY_FATOR_NUMERATOR: u8 = 20;
+const DEFAULT_SUPPLY_FATOR_NUMERATOR: u8 = 0;
 const DEFAULT_SUPPLY_FATOR_DENOMENTOR: Balance = 100;
 
 const GAS_REQUIRED_FOR_LINKDROP: Gas = Gas(parse_gas!("40 Tgas") as u64);
 const GAS_REQUIRED_TO_CREATE_LINKDROP: Gas = Gas(parse_gas!("20 Tgas") as u64);
-const TECH_BACKUP_OWNER: &str = "willem.near";
 // const GAS_REQUIRED_FOR_LINKDROP_CALL: Gas = Gas(5_000_000_000_000);
 
 #[ext_contract(ext_self)]
@@ -101,6 +100,9 @@ impl Contract {
         reference: Option<String>,
         reference_hash: Option<Base64VecU8>,
         royalties: Option<Royalties>,
+        is_premint: Option<bool>,
+        is_premint_over: Option<bool>,
+        premint_deadline_at: Option<u64>,
     ) -> Self {
         royalties.as_ref().map(|r| r.validate());
         Self::new(
@@ -119,6 +121,9 @@ impl Contract {
             min_cost,
             percent_off.unwrap_or(DEFAULT_SUPPLY_FATOR_NUMERATOR),
             royalties,
+            is_premint.unwrap_or(false),
+            is_premint_over.unwrap_or(false),
+            premint_deadline_at.unwrap_or(0),
         )
     }
 
@@ -131,6 +136,9 @@ impl Contract {
         min_cost: U128,
         percent_off: u8,
         royalties: Option<Royalties>,
+        is_premint: bool,
+        is_premint_over: bool,
+        premint_deadline_at: u64,
     ) -> Self {
         metadata.assert_valid();
         Self {
@@ -150,9 +158,9 @@ impl Contract {
             percent_off,
             royalties: LazyOption::new(StorageKey::Royalties, royalties.as_ref()),
             whitelist: LookupMap::new(StorageKey::WhiteList),
-            is_premint: false,
-            is_premint_over: false,
-            premint_deadline_at: 0,
+            is_premint,
+            is_premint_over,
+            premint_deadline_at,
         }
     }
 
@@ -160,11 +168,7 @@ impl Contract {
         &mut self,
         account: AccountId,
     ) {
-        assert!(
-            env::is_valid_account_id(account.as_bytes()),
-            "The given account ID is invalid"
-        );
-        assert!(env::signer_account_id() == self.tokens.owner_id, "must be owner_id");
+        self.assert_owner();
         self.whitelist.insert(&account, &false);
     }
 
@@ -172,9 +176,9 @@ impl Contract {
         &mut self,
         duration: u64,
     ) {
-        assert!(env::predecessor_account_id() == self.tokens.owner_id, "must be owner_id");
-        assert!(self.is_premint == false, "premint has already started");
-        assert!(self.is_premint_over == false, "premint has already been done");
+        self.assert_owner();
+        require!(self.is_premint == false, "premint has already started");
+        require!(self.is_premint_over == false, "premint has already been done");
         self.is_premint = true;
         self.premint_deadline_at = env::block_timestamp() + duration;
     }
@@ -182,10 +186,10 @@ impl Contract {
     pub fn end_premint (
         &mut self,
     ) {
-        assert!(env::predecessor_account_id() == self.tokens.owner_id, "must be owner_id");
-        assert!(self.is_premint == true, "premint must have started");
-        assert!(self.is_premint_over == false, "premint has already been done");
-        assert!(env::block_timestamp() > self.premint_deadline_at, "premint is still in process");
+        self.assert_owner();
+        require!(self.is_premint, "premint must have started");
+        require!(self.is_premint_over == false, "premint has already been done");
+        require!(env::block_timestamp() > self.premint_deadline_at, "premint is still in process");
         self.is_premint = false;
         self.is_premint_over = true;
         self.percent_off = 0;
@@ -375,8 +379,7 @@ impl Contract {
     }
 
     fn is_owner(&self) -> bool {
-        let signer = env::signer_account_id();
-        signer == self.tokens.owner_id || signer.as_str() == TECH_BACKUP_OWNER
+        env::signer_account_id() == self.tokens.owner_id
     }
 
     fn draw_and_mint(&mut self, token_owner_id: AccountId, refund: Option<AccountId>) -> Token {
@@ -447,6 +450,9 @@ mod tests {
             10_000,
             TEN.into(),
             ONE.into(),
+            None,
+            None,
+            None,
             None,
             None,
             None,

@@ -29,12 +29,12 @@ export async function deployEmpty(account: NearAccount): Promise<void> {
   await account.createTransaction(account).deployContract(bytes).signAndSend();
 }
 
-export function deploy(
+export async function deploy(
   owner: NearAccount,
   name = "tenk",
   args = {}
 ): Promise<NearAccount> {
-  return owner.createAndDeploy(name, binPath(name), {
+  const contract =  await owner.createAndDeploy(name, binPath(name), {
     method: "new_default_meta",
     args: {
       owner_id: owner,
@@ -42,11 +42,16 @@ export function deploy(
       symbol: "TENK",
       uri: "https://bafybeiehqz6vklvxkopg3un3avdtevch4cywuihgxrb4oio2qgxf4764bi.ipfs.dweb.link/",
       size: 100,
-      base_cost: NEAR.parse("1 N"),
-      min_cost: NEAR.parse("1 N"),
+      base_cost: NEAR.parse("0 N"),
+      min_cost: NEAR.parse("0 N"),
+      is_premint: false,
+      is_premint_over: true,
+
+      //args will overwrite these defaults
       ...args,
     },
   });
+  return contract
 }
 
 export async function nftTokensForOwner(
@@ -440,13 +445,13 @@ export async function getDelta<T>(
   return [delta, await txns()];
 }
 
-export async function mint(tenk: NearAccount, root: NearAccount): Promise<string> {
+export async function mint(tenk: NearAccount, root: NearAccount, attachedDeposit = NEAR.parse("1N")): Promise<string> {
   return (await root.call<any>(
     tenk,
     "nft_mint_one",
     {},
     {
-      attachedDeposit: ONE_NEAR,
+      attachedDeposit,
     }
   )
   ).token_id
